@@ -7,8 +7,9 @@ import {
   LayoutDashboard, Package, BarChart3, Settings, Plus, Upload, Link, Check, X, 
   Image as ImageIcon, Trash2, Edit2, Shield, Bell, User, Save, Truck, Star, Eye,
   ArrowUpRight, ArrowDownRight, TrendingUp, LogOut, CreditCard, Award,
-  CheckCircle, Calendar, ExternalLink, PlayCircle, GripHorizontal, MousePointerClick,
-  Camera, KeyRound, Mail as MailIcon, ShieldAlert
+  CheckCircle, Calendar, ExternalLink, PlayCircle, 
+  Menu, MousePointer, // 替换了可能导致白屏的 GripHorizontal 等图标
+  Camera, KeyRound, Mail as MailIcon, ShieldAlert // 新增设置页图标
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -36,6 +37,8 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
   const [realProducts, setRealProducts] = useState<any[]>([]); 
   const [realOrders, setRealOrders] = useState<any[]>([]); 
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  // 全局加载状态 (防止白屏关键)
+  const [isDashboardLoading, setIsDashboardLoading] = useState(true);
 
   // Settings State
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('PROFILE');
@@ -51,21 +54,36 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
   const [isSecurityLoading, setIsSecurityLoading] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
     const initData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setRealUser(user);
-        if (user.user_metadata?.avatar_url) {
-            setAvatarUrl(user.user_metadata.avatar_url);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          if (isMounted) {
+              setRealUser(user);
+              if (user.user_metadata?.avatar_url) setAvatarUrl(user.user_metadata.avatar_url);
+              if (user.user_metadata?.shop_name) setShopName(user.user_metadata.shop_name);
+          }
+          
+          const productsPromise = supabase.from('products').select('*').eq('seller_id', user.id).order('created_at', { ascending: false });
+          const ordersPromise = supabase.from('orders').select('*').eq('seller_id', user.id).order('created_at', { ascending: false });
+
+          const [productsRes, ordersRes] = await Promise.all([productsPromise, ordersPromise]);
+
+          if (isMounted) {
+              // 即使数据为空，也设置为 []，防止 null 导致崩溃
+              setRealProducts(productsRes.data || []);
+              setRealOrders(ordersRes.data || []);
+          }
         }
-        if (user.user_metadata?.shop_name) {
-            setShopName(user.user_metadata.shop_name);
-        }
-        fetchMyProducts(user.id);
-        fetchMyOrders(user.id);
+      } catch (error) {
+          console.error("Dashboard Init Error:", error);
+      } finally {
+          if (isMounted) setIsDashboardLoading(false);
       }
     };
     initData();
+    return () => { isMounted = false; };
   }, []);
 
   const fetchMyProducts = async (userId: string) => {
@@ -75,17 +93,8 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
       .select('*')
       .eq('seller_id', userId)
       .order('created_at', { ascending: false });
-    if (!error && data) setRealProducts(data);
+    if (!error) setRealProducts(data || []);
     setIsLoadingProducts(false);
-  };
-
-  const fetchMyOrders = async (userId: string) => {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('seller_id', userId)
-        .order('created_at', { ascending: false });
-      if(!error && data) setRealOrders(data);
   };
 
   const handleShipOrder = async (orderId: string) => {
@@ -97,13 +106,14 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
       } else { alert("Error: " + error.message); }
   };
 
-  const displayProducts = realProducts.length > 0 ? realProducts : fakeProducts;
+  const displayProducts = realProducts;
   const displayOrders = realOrders;
 
-  // --- Stats Calculation ---
+  // --- Stats Calculation (Safe Mode) ---
   const completedReviews = displayOrders.filter(o => o.status === 'Completed').length;
   const reviewRate = displayOrders.length > 0 ? Math.round((completedReviews / displayOrders.length) * 100) : 0;
   
+  // 计算总浏览和总点击
   const totalViews = displayProducts.reduce((acc, curr) => acc + (curr.views_count || 0), 0);
   const totalClicks = displayProducts.reduce((acc, curr) => acc + (curr.clicks_count || 0), 0);
 
@@ -128,7 +138,8 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   
-  const daysRemaining = Math.ceil((new Date(sellerSubscription.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  const subEndDate = sellerSubscription?.endDate ? new Date(sellerSubscription.endDate) : new Date();
+  const daysRemaining = Math.ceil((subEndDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
   const isExpired = daysRemaining < 0;
 
   const recentReviewsList = displayOrders.filter(o => o.status === 'Completed').map(o => ({
@@ -143,7 +154,11 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
         externalLink: o.ozon_link || o.wb_link
     })).slice(0, 5);
 
-  const isVideoUrl = (url: string) => { const lower = url.toLowerCase(); return lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.endsWith('.ogg'); };
+  const isVideoUrl = (url: string) => { 
+      if(!url) return false;
+      const lower = url.toLowerCase(); 
+      return lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.endsWith('.ogg'); 
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -293,6 +308,18 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
     <button onClick={() => { if (view === 'CREATE_PRODUCT') resetForm(); setCurrentView(view); }} className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg font-medium transition-colors ${currentView === view ? 'bg-purple-50 text-purple-700' : 'text-gray-600 hover:bg-gray-50'}`}><Icon size={20} /><span className="flex-1 text-left">{label}</span>{badge}</button>
   );
 
+  // --- Safe Render Check (关键修复: 防止白屏) ---
+  if (isDashboardLoading) {
+      return (
+          <div className="w-full h-screen flex items-center justify-center bg-white">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-gray-500 text-sm">Loading Dashboard...</p>
+              </div>
+          </div>
+      );
+  }
+
   return (
     <div className="w-full min-h-screen bg-gray-50 flex flex-col md:flex-row relative">
       
@@ -366,7 +393,7 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
                     <button onClick={() => { resetForm(); setCurrentView('CREATE_PRODUCT'); }} className="flex items-center gap-2 px-5 py-2 bg-purple-600 text-white rounded-lg shadow hover:bg-purple-700 transition-colors"><Plus size={18} />{t.seller.createProduct}</button>
                 </div>
                 
-                {/* 1. 激活的 KPI Cards + 新增数据分析入口 */}
+                {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     <div onClick={() => handleKpiClick('REVIEWS')} className={`bg-white p-6 rounded-xl shadow-sm border cursor-pointer hover:shadow-md transition-all ${overviewTab === 'REVIEWS' ? 'border-purple-500 ring-2 ring-purple-100' : 'border-gray-100'}`}>
                         <p className={`text-sm font-medium mb-2 ${overviewTab === 'REVIEWS' ? 'text-purple-600' : 'text-gray-500'}`}>{t.seller.totalReviews}</p>
@@ -391,7 +418,7 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
                     </div>
                 </div>
 
-                {/* 2. 动态概览内容区域 */}
+                {/* Dynamic Overview Content */}
                 <div ref={overviewContentRef} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden min-h-[400px]">
                     <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                         <h3 className="font-bold text-lg text-gray-800">
