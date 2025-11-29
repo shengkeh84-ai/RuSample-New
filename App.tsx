@@ -16,35 +16,63 @@ function App() {
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<'BUYER' | 'SELLER' | null>(null);
   
-  // 新增：是否需要选择身份的状态
+  // 是否需要选择身份的状态
   const [needsRoleSelection, setNeedsRoleSelection] = useState(false);
 
-  // 初始化检查登录状态
+  // 初始化检查登录状态 + 处理 Google 登录回传的身份
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setUser(user);
-        const role = user.user_metadata?.role;
-        if (role) {
-            setUserRole(role);
-        } else {
-            // 如果已登录但没身份，开启选择模式
-            setNeedsRoleSelection(true);
-        }
-      }
-    });
+    // 1. 定义处理 URL 参数的逻辑
+    const handleUrlParams = async (currentUser: any) => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const desiredRole = params.get('desired_role');
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        // 如果 URL 里包含 desired_role 参数
+        if (currentUser && desiredRole && (desiredRole === 'BUYER' || desiredRole === 'SELLER')) {
+           const currentRole = currentUser.user_metadata?.role;
+           
+           // 只有当数据库里没有角色，或者角色不匹配时才更新
+           if (!currentRole || currentRole !== desiredRole) {
+              console.log(`检测到身份标签: ${desiredRole}，正在写入数据库...`);
+              
+              const { error } = await supabase.auth.updateUser({
+                 data: { role: desiredRole }
+              });
+
+              if (!error) {
+                 setUserRole(desiredRole as 'BUYER' | 'SELLER');
+                 setNeedsRoleSelection(false);
+                 // 清理 URL 参数，保持地址栏整洁
+                 window.history.replaceState({}, document.title, window.location.pathname);
+                 return true; 
+              }
+           }
+        }
+      } catch (error) {
+        console.error("URL Params Error:", error);
+      }
+      return false;
+    };
+
+    // 2. 监听 Auth 状态变化
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const currentUser = session?.user;
       setUser(currentUser);
+
       if (currentUser) {
-          const role = currentUser.user_metadata?.role;
-          if (role) {
-              setUserRole(role);
-              setNeedsRoleSelection(false);
-          } else {
-              // 刚注册（比如Google登录），没有身份
-              setNeedsRoleSelection(true);
+          // 优先尝试从 URL 处理角色
+          const handled = await handleUrlParams(currentUser);
+          
+          if (!handled) {
+            // 如果 URL 里没参数，就读数据库里的
+            const role = currentUser.user_metadata?.role;
+            if (role) {
+                setUserRole(role);
+                setNeedsRoleSelection(false);
+            } else {
+                // 如果既没 URL 参数，数据库也没角色，才显示手动选择屏
+                setNeedsRoleSelection(true);
+            }
           }
       } else {
           setUserRole(null);
@@ -59,7 +87,6 @@ function App() {
   const handleRoleSelect = async (role: 'BUYER' | 'SELLER') => {
       if (!user) return;
       
-      // 更新数据库中的用户身份
       const { error } = await supabase.auth.updateUser({
           data: { role: role }
       });
@@ -140,7 +167,14 @@ function App() {
       {showAuth && (
         <AuthView 
           initialMode={authMode} 
-          onClose={() => setShowAuth(false)} 
+          onClose={() => setShowAuth(false)} // 确保这里传递了 onClose
+          onLoginSuccess={(role) => {
+             setUserRole(role);
+             setShowAuth(false);
+          }}
+          onSignupSuccess={() => {
+             // 注册成功后的逻辑
+          }}
         />
       )}
     </div>

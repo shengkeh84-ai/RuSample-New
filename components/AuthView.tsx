@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Apple, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Apple, Loader2, Eye, EyeOff, X } from 'lucide-react'; // 确保引入了 X 图标
 import { supabase } from '../lib/supabase';
 
-// --- 图标组件保持不变 ---
+// --- 图标组件 ---
 const GoogleIcon = () => (
   <svg className="w-5 h-5" viewBox="0 0 24 24">
     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -15,7 +15,7 @@ const GoogleIcon = () => (
 
 const FacebookIcon = () => (
   <svg className="w-5 h-5 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24">
-    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
   </svg>
 );
 
@@ -29,9 +29,10 @@ interface AuthViewProps {
   initialMode?: 'LOGIN' | 'SIGNUP';
   onLoginSuccess: (role: 'BUYER' | 'SELLER') => void;
   onSignupSuccess: () => void;
+  onClose: () => void; // 增加 onClose 类型定义
 }
 
-const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSuccess, onSignupSuccess }) => {
+const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSuccess, onSignupSuccess, onClose }) => {
   const { t } = useLanguage();
   const [isLogin, setIsLogin] = useState(initialMode === 'LOGIN');
   const [role, setRole] = useState<'BUYER' | 'SELLER'>('BUYER');
@@ -50,7 +51,7 @@ const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSucce
     setShowPassword(false);
   };
 
-  // --- 核心：处理邮箱认证 ---
+  // --- 处理邮箱认证 ---
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
@@ -67,12 +68,10 @@ const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSucce
         
         if (error) throw error;
 
-        // 获取用户角色（从数据库 profiles 表或 metadata）
-        // 为了确保安全，我们这里直接读取 metadata，它是我们注册时写入的
         const userRole = data.user?.user_metadata?.role;
 
-        // 如果用户身份不匹配，进行拦截
-        if (role === 'SELLER' && userRole !== 'SELLER') {
+        // 简单的角色检查
+        if (role === 'SELLER' && userRole !== 'SELLER' && userRole) {
             await supabase.auth.signOut(); 
             throw new Error('此账号不是卖家账号。请切换到“我是买家”登录。');
         }
@@ -85,7 +84,6 @@ const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSucce
           email,
           password,
           options: {
-            // 关键：将用户选定的角色写入 metadata
             data: { role } 
           }
         });
@@ -103,14 +101,15 @@ const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSucce
     }
   };
 
-  // --- 核心：处理社交登录 ---
+  // --- 处理社交登录 (修复 Google 登录白屏问题) ---
   const handleSocialLogin = async (provider: string) => {
     setIsLoading(true);
     try {
+        const origin = window.location.origin;
         const { error } = await supabase.auth.signInWithOAuth({
-            provider: provider as any, // 'google', 'facebook' 等
+            provider: provider as any, 
             options: {
-                redirectTo: 'https://ru-sample-new-p4b5.vercel.app',
+                redirectTo: `${origin}?desired_role=${role}`,
             }
         });
         if (error) throw error;
@@ -121,165 +120,146 @@ const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSucce
   };
 
   return (
-    <div className="flex flex-col lg:flex-row w-full min-h-[calc(100vh-80px)] bg-gray-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto">
+      <div className="relative flex flex-col lg:flex-row w-full max-w-5xl bg-white rounded-2xl overflow-hidden shadow-2xl m-4 min-h-[600px]">
       
-      {/* 左侧展示区域 (UI 保持不变) */}
-      <div className="hidden lg:flex flex-1 bg-[#5D3EA8] items-center justify-center p-12 relative overflow-hidden">
-        <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-[-10%] left-[-10%] w-80 h-80 bg-black/10 rounded-full blur-3xl"></div>
+        {/* 关闭按钮 */}
+        <button 
+          onClick={onClose}
+          className="absolute top-4 right-4 z-50 p-2 bg-black/10 hover:bg-black/20 rounded-full transition-colors"
+        >
+          <X size={20} className="text-gray-600" />
+        </button>
 
-        <div className="flex flex-col items-center max-w-md w-full z-10">
-          <div className="relative w-64 h-[500px] bg-gray-900 rounded-[2.5rem] border-[8px] border-gray-900 shadow-2xl overflow-hidden mb-12 transform rotate-[-2deg] hover:rotate-0 transition-transform duration-500">
-             <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-6 bg-gray-900 rounded-b-2xl z-20"></div>
-             <div className="w-full h-full bg-white relative flex flex-col">
-                <div className="h-24 bg-purple-50 p-4 pt-8 flex items-end">
-                   <div className="w-8 h-8 rounded-full bg-purple-200"></div>
-                   <div className="ml-2 w-24 h-4 bg-purple-100 rounded"></div>
-                </div>
-                <div className="flex-1 p-4 space-y-4 overflow-hidden">
-                    <div className="w-full h-32 bg-gray-100 rounded-xl relative overflow-hidden group">
-                       <img src="https://images.pexels.com/photos/3762466/pexels-photo-3762466.jpeg?auto=compress&cs=tinysrgb&w=300" className="w-full h-full object-cover" alt="Product" />
-                       <div className="absolute bottom-2 left-2 px-2 py-1 bg-white/90 rounded text-[10px] font-bold text-purple-600">NEW</div>
-                    </div>
-                    <div className="space-y-2">
-                        <div className="w-3/4 h-3 bg-gray-100 rounded"></div>
-                        <div className="w-1/2 h-3 bg-gray-100 rounded"></div>
-                    </div>
-                    <div className="w-full h-32 bg-gray-100 rounded-xl mt-4 relative overflow-hidden">
-                       <img src="https://images.pexels.com/photos/996329/pexels-photo-996329.jpeg?auto=compress&cs=tinysrgb&w=300" className="w-full h-full object-cover" alt="Product 2" />
-                    </div>
-                </div>
-                <div className="h-12 border-t border-gray-100 flex justify-around items-center px-4">
-                   <div className="w-6 h-6 rounded bg-gray-200"></div>
-                   <div className="w-6 h-6 rounded bg-purple-500"></div>
-                   <div className="w-6 h-6 rounded bg-gray-200"></div>
-                </div>
-             </div>
-          </div>
+        {/* 左侧展示区域 */}
+        <div className="hidden lg:flex flex-1 bg-[#5D3EA8] items-center justify-center p-12 relative overflow-hidden">
+          <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-[-10%] left-[-10%] w-80 h-80 bg-black/10 rounded-full blur-3xl"></div>
 
-          <h2 className="text-3xl font-bold text-white text-center mb-6 leading-tight">
-            {t.auth.leftHeadline}
-          </h2>
-          
-          <button className="px-8 py-3 bg-white text-purple-700 font-bold rounded-full shadow-lg hover:bg-gray-100 hover:scale-105 transition-all">
-            {t.auth.getAppButton}
-          </button>
-        </div>
-      </div>
-
-      {/* 右侧登录表单 */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-24 bg-gray-50">
-        <div className="w-full max-w-md">
-          <div className="mb-8 text-center lg:text-left">
-             <h2 className="text-3xl font-bold text-gray-900 mb-2">
-               {isLogin ? t.auth.loginTitle : t.auth.signupTitle}
+          <div className="flex flex-col items-center max-w-md w-full z-10">
+             <h2 className="text-3xl font-bold text-white text-center mb-6 leading-tight">
+               {t.auth.leftHeadline}
              </h2>
-             <div className="flex items-center justify-center lg:justify-start gap-2 text-sm text-gray-600">
-               <span>{isLogin ? t.auth.notMember : t.auth.alreadyMember}</span>
-               <button 
-                 onClick={toggleMode}
-                 className="text-purple-600 font-bold hover:underline decoration-2 underline-offset-2"
-               >
-                 {isLogin ? t.auth.registerLink : t.auth.loginLink}
-               </button>
-             </div>
+             <button className="px-8 py-3 bg-white text-purple-700 font-bold rounded-full shadow-lg hover:bg-gray-100 hover:scale-105 transition-all">
+               {t.auth.getAppButton}
+             </button>
           </div>
+        </div>
 
-          {/* 角色选择器 */}
-          <div className="flex p-1 bg-gray-100 rounded-lg mb-8">
-            <button
-              type="button"
-              onClick={() => setRole('BUYER')}
-              className={`flex-1 py-2.5 text-sm font-bold rounded-md transition-all duration-200 ${role === 'BUYER' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              {t.auth.roleBuyer}
-            </button>
-            <button
-              type="button"
-              onClick={() => setRole('SELLER')}
-              className={`flex-1 py-2.5 text-sm font-bold rounded-md transition-all duration-200 ${role === 'SELLER' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              {t.auth.roleSeller}
-            </button>
-          </div>
-
-          <form onSubmit={handleEmailAuth} className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t.auth.emailLabel}</label>
-              <input 
-                type="email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder={t.auth.emailPlaceholder}
-                className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all bg-white"
-              />
+        {/* 右侧登录表单 */}
+        <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-12 bg-gray-50 overflow-y-auto">
+          <div className="w-full max-w-md">
+            <div className="mb-8 text-center lg:text-left">
+               <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                 {isLogin ? t.auth.loginTitle : t.auth.signupTitle}
+               </h2>
+               <div className="flex items-center justify-center lg:justify-start gap-2 text-sm text-gray-600">
+                 <span>{isLogin ? t.auth.notMember : t.auth.alreadyMember}</span>
+                 <button 
+                   onClick={toggleMode}
+                   className="text-purple-600 font-bold hover:underline decoration-2 underline-offset-2"
+                 >
+                   {isLogin ? t.auth.registerLink : t.auth.loginLink}
+                 </button>
+               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t.auth.passwordLabel}</label>
-              <div className="relative">
+            {/* 角色选择器 */}
+            <div className="flex p-1 bg-gray-100 rounded-lg mb-8">
+              <button
+                type="button"
+                onClick={() => setRole('BUYER')}
+                className={`flex-1 py-2.5 text-sm font-bold rounded-md transition-all duration-200 ${role === 'BUYER' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {t.auth.roleBuyer}
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole('SELLER')}
+                className={`flex-1 py-2.5 text-sm font-bold rounded-md transition-all duration-200 ${role === 'SELLER' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {t.auth.roleSeller}
+              </button>
+            </div>
+
+            <form onSubmit={handleEmailAuth} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t.auth.emailLabel}</label>
                 <input 
-                  type={showPassword ? "text" : "password"} 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
-                  placeholder={t.auth.passwordPlaceholder}
-                  className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all bg-white pr-10"
+                  placeholder={t.auth.emailPlaceholder}
+                  className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all bg-white"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
               </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t.auth.passwordLabel}</label>
+                <div className="relative">
+                  <input 
+                    type={showPassword ? "text" : "password"} 
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    placeholder={t.auth.passwordPlaceholder}
+                    className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all bg-white pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              {isLogin && (
+                <div className="text-left">
+                  <button type="button" className="text-purple-600 font-bold text-sm hover:underline">
+                    {t.auth.forgotPassword}
+                  </button>
+                </div>
+              )}
+
+              <button 
+                  type="submit" 
+                  disabled={isLoading}
+                  className="w-full py-4 bg-purple-300 text-white font-bold rounded-full shadow-md hover:bg-purple-400 active:scale-95 transition-all text-lg mb-6 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isLoading && <Loader2 className="animate-spin" size={20} />}
+                {isLogin ? t.auth.submitLogin : t.auth.submitSignup}
+              </button>
+            </form>
+
+            <div className="h-6 relative flex items-center justify-center">
+              <div className="absolute w-full border-t border-gray-200"></div>
+              <span className="bg-gray-50 px-4 text-xs text-gray-400 font-medium relative z-10">OR</span>
             </div>
 
-            {isLogin && (
-              <div className="text-left">
-                <button type="button" className="text-purple-600 font-bold text-sm hover:underline">
-                  {t.auth.forgotPassword}
-                </button>
-              </div>
-            )}
+            <div className="space-y-3 mt-6">
+               <button onClick={() => handleSocialLogin('google')} className="w-full flex items-center justify-center gap-3 py-3 bg-white border border-gray-200 rounded-full font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+                  <GoogleIcon />
+                  {t.auth.continueGoogle}
+               </button>
 
-            <button 
-                type="submit" 
-                disabled={isLoading}
-                className="w-full py-4 bg-purple-300 text-white font-bold rounded-full shadow-md hover:bg-purple-400 active:scale-95 transition-all text-lg mb-6 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isLoading && <Loader2 className="animate-spin" size={20} />}
-              {isLogin ? t.auth.submitLogin : t.auth.submitSignup}
-            </button>
-          </form>
+               <button onClick={() => handleSocialLogin('facebook')} className="w-full flex items-center justify-center gap-3 py-3 bg-white border border-gray-200 rounded-full font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+                  <FacebookIcon />
+                  {t.auth.continueFacebook}
+               </button>
 
-          <div className="h-6 relative flex items-center justify-center">
-            <div className="absolute w-full border-t border-gray-200"></div>
-            <span className="bg-gray-50 px-4 text-xs text-gray-400 font-medium relative z-10">OR</span>
-          </div>
+               <button onClick={() => handleSocialLogin('apple')} className="w-full flex items-center justify-center gap-3 py-3 bg-white border border-gray-200 rounded-full font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+                  <Apple size={20} className="text-black" />
+                  {t.auth.continueApple}
+               </button>
 
-          <div className="space-y-3 mt-6">
-             <button onClick={() => handleSocialLogin('google')} className="w-full flex items-center justify-center gap-3 py-3 bg-white border border-gray-200 rounded-full font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
-                <GoogleIcon />
-                {t.auth.continueGoogle}
-             </button>
-
-             <button onClick={() => handleSocialLogin('facebook')} className="w-full flex items-center justify-center gap-3 py-3 bg-white border border-gray-200 rounded-full font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
-                <FacebookIcon />
-                {t.auth.continueFacebook}
-             </button>
-
-             <button onClick={() => handleSocialLogin('apple')} className="w-full flex items-center justify-center gap-3 py-3 bg-white border border-gray-200 rounded-full font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
-                <Apple size={20} className="text-black" />
-                {t.auth.continueApple}
-             </button>
-
-             <button onClick={() => handleSocialLogin('vk')} className="w-full flex items-center justify-center gap-3 py-3 bg-white border border-gray-200 rounded-full font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm group">
-                <VKIcon />
-                {t.auth.continueVK}
-             </button>
+               <button onClick={() => handleSocialLogin('vk')} className="w-full flex items-center justify-center gap-3 py-3 bg-white border border-gray-200 rounded-full font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm group">
+                  <VKIcon />
+                  {t.auth.continueVK}
+               </button>
+            </div>
           </div>
         </div>
       </div>
