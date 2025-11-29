@@ -1,159 +1,150 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
-import CategoryView from './components/CategoryView';
 import SearchView from './components/SearchView';
+import CategoryView from './components/CategoryView';
 import AuthView from './components/AuthView';
 import BuyerDashboard from './components/BuyerDashboard';
 import SellerDashboard from './components/SellerDashboard';
-import { LanguageProvider } from './contexts/LanguageContext';
-import { DataProvider } from './contexts/DataContext';
-import { ViewState } from './types';
+import { useLanguage } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 
-const App: React.FC = () => {
-  const [viewState, setViewState] = useState<ViewState>('HOME');
-  const [searchQuery, setSearchQuery] = useState('');
+function App() {
+  const { t } = useLanguage();
+  const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
+  const [user, setUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<'BUYER' | 'SELLER' | null>(null);
+  
+  // 新增：是否需要选择身份的状态
+  const [needsRoleSelection, setNeedsRoleSelection] = useState(false);
 
-  // --- 智能身份监听 ---
+  // 初始化检查登录状态
   useEffect(() => {
-    // 1. 页面加载时检查 session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        // 读取用户元数据里的角色 (我们在注册时存进去的)
-        const role = session.user.user_metadata?.role || 'BUYER'; 
-        // 只有在首页时才自动跳转，防止打断用户操作
-        if (viewState === 'HOME') {
-            handleAuthSuccess(role as 'BUYER' | 'SELLER');
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUser(user);
+        const role = user.user_metadata?.role;
+        if (role) {
+            setUserRole(role);
+        } else {
+            // 如果已登录但没身份，开启选择模式
+            setNeedsRoleSelection(true);
         }
       }
     });
 
-    // 2. 监听登录/登出事件
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        const role = session.user.user_metadata?.role || 'BUYER';
-        handleAuthSuccess(role as 'BUYER' | 'SELLER');
-      } else if (event === 'SIGNED_OUT') {
-        setViewState('HOME');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user;
+      setUser(currentUser);
+      if (currentUser) {
+          const role = currentUser.user_metadata?.role;
+          if (role) {
+              setUserRole(role);
+              setNeedsRoleSelection(false);
+          } else {
+              // 刚注册（比如Google登录），没有身份
+              setNeedsRoleSelection(true);
+          }
+      } else {
+          setUserRole(null);
+          setNeedsRoleSelection(false);
       }
+      setShowAuth(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
-  // ------------------
 
-  const handleToggleCategories = () => {
-    setViewState(viewState === 'CATEGORIES' ? 'HOME' : 'CATEGORIES');
+  const handleRoleSelect = async (role: 'BUYER' | 'SELLER') => {
+      if (!user) return;
+      
+      // 更新数据库中的用户身份
+      const { error } = await supabase.auth.updateUser({
+          data: { role: role }
+      });
+
+      if (!error) {
+          setUserRole(role);
+          setNeedsRoleSelection(false);
+      } else {
+          alert("Error saving role: " + error.message);
+      }
   };
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    setViewState('SEARCH');
-  };
-
-  const handleLogin = () => {
-    setAuthMode('LOGIN');
-    setViewState('AUTH');
-  };
-
-  const handleSignup = () => {
-    setAuthMode('SIGNUP');
-    setViewState('AUTH');
-  };
-
-  const handleHome = () => {
-    setViewState('HOME');
-  };
-
-  const handleAuthSuccess = (role: 'BUYER' | 'SELLER') => {
-    if (role === 'BUYER') {
-      setViewState('BUYER_DASHBOARD');
-    } else {
-      setViewState('SELLER_DASHBOARD');
-    }
-  };
-
-  const handleSignupSuccess = () => {
-    setViewState('AUTH');
-    setAuthMode('LOGIN');
-  };
-  
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    handleHome();
+    setUser(null);
+    setUserRole(null);
+    setNeedsRoleSelection(false);
   };
 
-  const showNavbar = !['BUYER_DASHBOARD', 'SELLER_DASHBOARD'].includes(viewState);
+  // 如果需要选择身份，显示全屏选择界面
+  if (user && needsRoleSelection) {
+      return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white">
+              <div className="max-w-md w-full p-8 text-center">
+                  <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome!</h2>
+                  <p className="text-gray-500 mb-8">Please select your account type to continue.</p>
+                  
+                  <div className="space-y-4">
+                      <button 
+                          onClick={() => handleRoleSelect('BUYER')}
+                          className="w-full p-6 border-2 border-gray-200 rounded-2xl hover:border-purple-600 hover:bg-purple-50 transition-all group text-left flex items-center gap-4"
+                      >
+                          <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">🛍️</div>
+                          <div>
+                              <h3 className="font-bold text-gray-900">I am a Buyer</h3>
+                              <p className="text-sm text-gray-500">I want to find samples & review products</p>
+                          </div>
+                      </button>
 
+                      <button 
+                          onClick={() => handleRoleSelect('SELLER')}
+                          className="w-full p-6 border-2 border-gray-200 rounded-2xl hover:border-purple-600 hover:bg-purple-50 transition-all group text-left flex items-center gap-4"
+                      >
+                          <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">💼</div>
+                          <div>
+                              <h3 className="font-bold text-gray-900">I am a Seller</h3>
+                              <p className="text-sm text-gray-500">I want to list products & get reviews</p>
+                          </div>
+                      </button>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
+  // 路由逻辑
+  if (userRole === 'SELLER') {
+    return <SellerDashboard onLogout={handleLogout} />;
+  }
+
+  if (userRole === 'BUYER') {
+    return <BuyerDashboard onLogout={handleLogout} />;
+  }
+
+  // 未登录状态：显示首页
   return (
-    <DataProvider>
-    <LanguageProvider>
-      <div className={`min-h-screen overflow-x-hidden selection:bg-pink-500 selection:text-white ${viewState === 'HOME' ? 'bg-[#9F55FF] bg-gradient-to-br from-[#A066FF] to-[#8239FF]' : 'bg-purple-600'}`}>
-        
-        {viewState === 'HOME' && (
-          <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-              <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-400/20 rounded-full blur-[120px]"></div>
-              <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 rounded-full blur-[120px]"></div>
-          </div>
-        )}
-
-        <div className="relative z-10 flex flex-col min-h-screen">
-          {showNavbar && (
-            <Navbar 
-              onToggleCategories={handleToggleCategories} 
-              isCategoriesOpen={viewState === 'CATEGORIES'}
-              onSearch={handleSearch}
-              searchQuery={searchQuery}
-              onLogin={handleLogin}
-              onSignup={handleSignup}
-              onHome={handleHome}
-            />
-          )}
-          
-          <main className="flex-1 flex flex-col relative">
-            {viewState === 'HOME' && <Hero />}
-            {viewState === 'CATEGORIES' && <CategoryView />}
-            {viewState === 'SEARCH' && <SearchView query={searchQuery} />}
-            {viewState === 'AUTH' && (
-              <AuthView 
-                initialMode={authMode} 
-                onLoginSuccess={handleAuthSuccess}
-                onSignupSuccess={handleSignupSuccess}
-              />
-            )}
-            {viewState === 'BUYER_DASHBOARD' && <BuyerDashboard onLogout={handleLogout} />}
-            {viewState === 'SELLER_DASHBOARD' && <SellerDashboard onLogout={handleLogout} />}
-          </main>
-        </div>
-        
-        {!['BUYER_DASHBOARD', 'SELLER_DASHBOARD'].includes(viewState) && (
-          <div className="fixed bottom-6 left-6 z-50">
-             <button 
-               onClick={() => setViewState('HOME')} 
-               className="w-12 h-12 bg-black text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform font-bold text-xl"
-             >
-               N
-             </button>
-          </div>
-        )}
-
-      </div>
+    <div className="min-h-screen bg-white font-sans text-gray-900">
+      <Navbar 
+        onLoginClick={() => { setAuthMode('LOGIN'); setShowAuth(true); }} 
+        onSignupClick={() => { setAuthMode('SIGNUP'); setShowAuth(true); }} 
+      />
+      <main>
+        <Hero onGetApp={() => { setAuthMode('SIGNUP'); setShowAuth(true); }} />
+        <SearchView />
+        <CategoryView />
+      </main>
       
-      <style>{`
-        @keyframes float {
-          0% { transform: translateY(0px); }
-          50% { transform: translateY(-15px); }
-          100% { transform: translateY(0px); }
-        }
-        .animate-float {
-          animation: float 6s ease-in-out infinite;
-        }
-      `}</style>
-    </LanguageProvider>
-    </DataProvider>
+      {showAuth && (
+        <AuthView 
+          initialMode={authMode} 
+          onClose={() => setShowAuth(false)} 
+        />
+      )}
+    </div>
   );
-};
+}
 
 export default App;
