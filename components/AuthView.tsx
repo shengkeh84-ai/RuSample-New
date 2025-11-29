@@ -171,6 +171,7 @@ const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSucce
       <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-24 bg-gray-50">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center lg:text-left">
+             <h1 style={{color: 'red', fontSize: '30px', textAlign: 'center'}}>我是新版本！！！</h1>
              <h2 className="text-3xl font-bold text-gray-900 mb-2">
                {isLogin ? t.auth.loginTitle : t.auth.signupTitle}
              </h2>
