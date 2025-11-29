@@ -110,7 +110,7 @@ const AuthView: React.FC<AuthViewProps> = ({ initialMode = 'LOGIN', onLoginSucce
         const { error } = await supabase.auth.signInWithOAuth({
             provider: provider as any, // 'google', 'facebook' 等
             options: {
-                redirectTo: window.location.origin,
+                redirectTo: 'https://ru-sample-new-p4b5.vercel.app',
             }
         });
         if (error) throw error;
