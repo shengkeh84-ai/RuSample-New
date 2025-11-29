@@ -97,15 +97,16 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
       } else { alert("Error: " + error.message); }
   };
 
-  const displayProducts = realProducts.length > 0 ? realProducts : fakeProducts;
-  const displayOrders = realOrders;
+  const displayProducts = realProducts.length > 0 ? realProducts : (fakeProducts || []);
+  const displayOrders = realOrders || [];
 
-  // --- Stats Calculation ---
+  // --- Stats Calculation (Safe Mode) ---
   const completedReviews = displayOrders.filter(o => o.status === 'Completed').length;
   const reviewRate = displayOrders.length > 0 ? Math.round((completedReviews / displayOrders.length) * 100) : 0;
   
-  const totalViews = displayProducts.reduce((acc, curr) => acc + (curr.views_count || 0), 0);
-  const totalClicks = displayProducts.reduce((acc, curr) => acc + (curr.clicks_count || 0), 0);
+  // 计算总浏览和总点击 (增加了防御性代码)
+  const totalViews = (displayProducts || []).reduce((acc, curr) => acc + (curr.views_count || 0), 0);
+  const totalClicks = (displayProducts || []).reduce((acc, curr) => acc + (curr.clicks_count || 0), 0);
 
   // Payment State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -292,6 +293,11 @@ const SellerDashboard: React.FC<SellerDashboardProps> = ({ onLogout }) => {
   const SidebarItem = ({ view, icon: Icon, label, badge }: { view: SellerView; icon: any; label: string, badge?: React.ReactNode }) => (
     <button onClick={() => { if (view === 'CREATE_PRODUCT') resetForm(); setCurrentView(view); }} className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg font-medium transition-colors ${currentView === view ? 'bg-purple-50 text-purple-700' : 'text-gray-600 hover:bg-gray-50'}`}><Icon size={20} /><span className="flex-1 text-left">{label}</span>{badge}</button>
   );
+
+  // --- Safe Render Check (关键修复: 防止白屏) ---
+  if (!realUser && !fakeProducts) {
+      return <div className="w-full h-screen flex items-center justify-center text-gray-400">Loading Dashboard...</div>;
+  }
 
   return (
     <div className="w-full min-h-screen bg-gray-50 flex flex-col md:flex-row relative">
