@@ -9,15 +9,18 @@ interface SearchViewProps {
 
 const SearchView: React.FC<SearchViewProps> = ({ query }) => {
   const { t } = useLanguage();
-  const { products } = useData();
+  // 添加默认值 [] 防止 products 为空时报错
+  const { products = [] } = useData();
 
-  const lowerQuery = query.toLowerCase();
+  // 修复点 1: 确保 query 存在再转小写
+  const lowerQuery = (query || '').toLowerCase();
   
   const filteredProducts = products.filter(p => 
     p.status === 'Active' && (
-        p.title.toLowerCase().includes(lowerQuery) || 
-        p.description.toLowerCase().includes(lowerQuery) ||
-        p.category.toLowerCase().includes(lowerQuery)
+        // 修复点 2: 给 title, description, category 加防护，如果是 undefined 就用空字符串 ''
+        (p.title || '').toLowerCase().includes(lowerQuery) || 
+        (p.description || '').toLowerCase().includes(lowerQuery) ||
+        (p.category || '').toLowerCase().includes(lowerQuery)
     )
   );
 
@@ -40,7 +43,8 @@ const SearchView: React.FC<SearchViewProps> = ({ query }) => {
                 {filteredProducts.map(product => (
                     <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow group">
                         <div className="relative h-48 bg-gray-100 overflow-hidden">
-                            <img src={product.images[0]} alt={product.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                            {/* 修复点 3: 图片也加个防护 */}
+                            <img src={product.images?.[0] || ''} alt={product.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                             <div className="absolute top-3 right-3 p-1.5 bg-white/80 rounded-full">
                                 <Heart size={16} className="text-gray-400" />
                             </div>
@@ -54,10 +58,10 @@ const SearchView: React.FC<SearchViewProps> = ({ query }) => {
                             <p className="text-sm text-gray-500 mb-4 line-clamp-2 h-10">{product.description}</p>
                             
                             <div className="flex items-center gap-1">
-                                {product.platformLinks.ozon && (
+                                {product.platformLinks?.ozon && (
                                     <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-100">OZON</span>
                                 )}
-                                {product.platformLinks.wb && (
+                                {product.platformLinks?.wb && (
                                     <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded border border-purple-100">WB</span>
                                 )}
                             </div>
